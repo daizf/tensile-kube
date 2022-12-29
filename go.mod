@@ -11,6 +11,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/virtual-kubelet/node-cli v0.5.2-0.20210302175044-b3a8c550471d
 	github.com/virtual-kubelet/virtual-kubelet v1.5.0
+	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 	k8s.io/api v0.18.6
 	k8s.io/apimachinery v0.18.6

@@ -140,7 +140,7 @@ func newFakeVirtualK8SWithNodePod() (*VirtualK8S, v1.NodeInformer, v1.PodInforme
 		client: client,
 		clientCache: clientCache{
 			nodeLister: nodeInformer.Lister(),
-			podLister:  podInformer.Lister(),
+			podLister:  podInformer.Lister().Pods("ns"),
 		},
 		providerNode: &common.ProviderNode{
 			Node: &corev1.Node{},

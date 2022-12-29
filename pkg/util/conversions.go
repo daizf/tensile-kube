@@ -18,6 +18,7 @@ package util
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -63,6 +64,26 @@ func TrimPod(pod *corev1.Pod, ignoreLabels []string) *corev1.Pod {
 	}
 
 	return podCopy
+}
+
+// ConvertPodRef 修改Pod引用的资源名称
+func ConvertPodRef(pod *corev1.Pod) *corev1.Pod {
+	for _, v := range pod.Spec.Volumes {
+		if v.Secret != nil {
+			v.Secret.SecretName = fmt.Sprintf("%s-%s", pod.Namespace, v.Secret.SecretName)
+		}
+		if v.ConfigMap != nil {
+			v.ConfigMap.Name = fmt.Sprintf("%s-%s", pod.Namespace, v.ConfigMap.Name)
+		}
+	}
+
+	if pod.Spec.ImagePullSecrets != nil {
+		for _, s := range pod.Spec.ImagePullSecrets {
+			s.Name = fmt.Sprintf("%s-%s", pod.Namespace, s.Name)
+		}
+	}
+
+	return pod
 }
 
 // trimContainers remove 'default-token' crated automatically by k8s
@@ -206,4 +227,10 @@ func ConvertAnnotations(annotation map[string]string) *ClustersNodeSelection {
 		return nil
 	}
 	return &cns
+}
+
+// ConvertObjectName 将ns拼接在name上
+func ConvertObjectName(meta *metav1.ObjectMeta) {
+	meta.Name = fmt.Sprintf("%s-%s", meta.Namespace, meta.Name)
+	meta.Namespace = "eki-burst-99999"
 }

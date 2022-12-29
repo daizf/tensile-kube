@@ -40,6 +40,11 @@ import (
 	"github.com/virtual-kubelet/tensile-kube/pkg/util"
 )
 
+const (
+	// TenantNamespace 在共享集群中租户的namespace，CLUSTER_ID 为Serverless K8s集群ID
+	TenantNamespace = "eki-burst-99999"
+)
+
 // ClientConfig defines the configuration of a lower cluster
 type ClientConfig struct {
 	// allowed qps of the kube client
@@ -52,10 +57,10 @@ type ClientConfig struct {
 
 // clientCache wraps the lister of client cluster
 type clientCache struct {
-	podLister    v1.PodLister
+	podLister    v1.PodNamespaceLister
 	nsLister     v1.NamespaceLister
-	cmLister     v1.ConfigMapLister
-	secretLister v1.SecretLister
+	cmLister     v1.ConfigMapNamespaceLister
+	secretLister v1.SecretNamespaceLister
 	nodeLister   v1.NodeLister
 }
 
@@ -118,6 +123,11 @@ func NewVirtualK8S(cfg provider.InitConfig, cc *ClientConfig,
 		return nil, fmt.Errorf("could not get target cluster server version: %v", err)
 	}
 
+	//// todo 根据cluster-id来过滤（Client集群是多租户）
+	//labelOptions := kubeinformers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+	//	opts.LabelSelector = "cluster-id=8888-8888-9999-9999"
+	//})
+
 	informer := kubeinformers.NewSharedInformerFactory(client, 0)
 	podInformer := informer.Core().V1().Pods()
 	nsInformer := informer.Core().V1().Namespaces()
@@ -138,10 +148,10 @@ func NewVirtualK8S(cfg provider.InitConfig, cc *ClientConfig,
 		config:               clientConfig,
 		enableServiceAccount: enableServiceAccount,
 		clientCache: clientCache{
-			podLister:    podInformer.Lister(),
+			podLister:    podInformer.Lister().Pods(TenantNamespace),
 			nsLister:     nsInformer.Lister(),
-			cmLister:     cmInformer.Lister(),
-			secretLister: secretInformer.Lister(),
+			cmLister:     cmInformer.Lister().ConfigMaps(TenantNamespace),
+			secretLister: secretInformer.Lister().Secrets(TenantNamespace),
 			nodeLister:   nodeInformer.Lister(),
 		},
 		rm:           cfg.ResourceManager,
@@ -269,8 +279,8 @@ func (v *VirtualK8S) addPod(obj interface{}) {
 			if v.providerNode.Node == nil {
 				return
 			}
-			copy := v.providerNode.DeepCopy()
-			v.updatedNode <- copy
+			dCopy := v.providerNode.DeepCopy()
+			v.updatedNode <- dCopy
 		}
 		return
 	}
@@ -337,8 +347,8 @@ func (v *VirtualK8S) deletePod(obj interface{}) {
 			if v.providerNode.Node == nil {
 				return
 			}
-			copy := v.providerNode.DeepCopy()
-			v.updatedNode <- copy
+			dCopy := v.providerNode.DeepCopy()
+			v.updatedNode <- dCopy
 		}
 		return
 	}
@@ -374,9 +384,9 @@ func (v *VirtualK8S) updateVKCapacityFromNode(old, new *corev1.Node) {
 	if v.providerNode.Node == nil {
 		return
 	}
-	copy := v.providerNode.DeepCopy()
-	if !reflect.DeepEqual(nodeCopy, copy) {
-		v.updatedNode <- copy
+	dCopy := v.providerNode.DeepCopy()
+	if !reflect.DeepEqual(nodeCopy, dCopy) {
+		v.updatedNode <- dCopy
 	}
 }
 
@@ -411,7 +421,7 @@ func (v *VirtualK8S) updateVKCapacityFromPod(old, new *corev1.Pod) {
 	if v.providerNode.Node == nil {
 		return
 	}
-	copy := v.providerNode.DeepCopy()
-	v.updatedNode <- copy
+	dCopy := v.providerNode.DeepCopy()
+	v.updatedNode <- dCopy
 	return
 }

@@ -80,6 +80,7 @@ func TestUpdatePod(t *testing.T) {
 	virtualPod.Labels = map[string]string{"virtual-pod": "true"}
 	updatedVirtualPod := notVirtualPod.DeepCopy()
 	updatedVirtualPod.Annotations = map[string]string{"virtual-pod": "true"}
+
 	for _, c := range []struct {
 		name     string
 		pod      *corev1.Pod
@@ -111,7 +112,9 @@ func TestUpdatePod(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.existPod != nil {
-				podInformer.Informer().GetStore().Add(c.pod)
+				cachePod := c.pod.DeepCopy()
+				util.ConvertObjectName(&cachePod.ObjectMeta)
+				podInformer.Informer().GetStore().Add(cachePod)
 			}
 			err := vk.UpdatePod(ctx, c.pod)
 			if (err != nil) != c.error {
@@ -201,7 +204,9 @@ func TestGetPod(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.existPod != nil {
-				podInformer.Informer().GetStore().Add(c.pod)
+				cachePod := c.pod.DeepCopy()
+				util.ConvertObjectName(&cachePod.ObjectMeta)
+				podInformer.Informer().GetStore().Add(cachePod)
 			}
 			_, err := vk.GetPod(ctx, c.pod.Namespace, c.pod.Name)
 			if (err != nil) != c.error {
@@ -224,7 +229,7 @@ func newFakeVirtualK8S() (*VirtualK8S, v1.NamespaceInformer, v1.PodInformer) {
 		client: client,
 		clientCache: clientCache{
 			nsLister:  nsInformer.Lister(),
-			podLister: podInformer.Lister(),
+			podLister: podInformer.Lister().Pods("test"),
 		},
 	}, nsInformer, podInformer
 }

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/virtual-kubelet/virtual-kubelet/errdefs"
@@ -49,15 +50,16 @@ func (v *VirtualK8S) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 		return nil
 	}
 	basicPod := util.TrimPod(pod, v.ignoreLabels)
+
 	klog.V(3).Infof("Creating pod %v/%+v", pod.Namespace, pod.Name)
-	if _, err := v.clientCache.nsLister.Get(pod.Namespace); err != nil {
+	if _, err := v.clientCache.nsLister.Get(TenantNamespace); err != nil {
 		if !errors.IsNotFound(err) {
 			return err
 		}
 		klog.Infof("Namespace %s does not exist for pod %s, creating it", pod.Namespace, pod.Name)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: pod.Namespace,
+				Name: TenantNamespace,
 			},
 		}
 		if _, createErr := v.client.CoreV1().Namespaces().Create(ctx, ns,
@@ -69,6 +71,10 @@ func (v *VirtualK8S) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 	secretNames := getSecrets(pod)
 	configMaps := getConfigmaps(pod)
 	pvcs := getPVCs(pod)
+
+	basicPod = util.ConvertPodRef(basicPod)
+	util.ConvertObjectName(&basicPod.ObjectMeta)
+
 	go wait.PollImmediate(500*time.Millisecond, 10*time.Minute, func() (bool, error) {
 
 		klog.V(4).Info("Trying to creating base dependent")
@@ -98,7 +104,7 @@ func (v *VirtualK8S) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 		return fmt.Errorf("create secrets failed: %v", err)
 	}
 	klog.V(6).Infof("Creating pod %+v", pod)
-	_, err = v.client.CoreV1().Pods(pod.Namespace).Create(ctx, basicPod, metav1.CreateOptions{})
+	_, err = v.client.CoreV1().Pods(TenantNamespace).Create(ctx, basicPod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not create pod: %v", err)
 	}
@@ -123,6 +129,7 @@ func (v *VirtualK8S) UpdatePod(ctx context.Context, pod *corev1.Pod) error {
 	//tripped ignore labels which recoverd in currentPod
 	util.TrimLabels(currentPod.ObjectMeta.Labels, v.ignoreLabels)
 	podCopy := currentPod.DeepCopy()
+	util.ConvertObjectName(&podCopy.ObjectMeta)
 	// util.GetUpdatedPod update PodCopy container image, annotations, labels.
 	// recover toleration, affinity, tripped ignore labels.
 	util.GetUpdatedPod(podCopy, pod, v.ignoreLabels)
@@ -131,7 +138,7 @@ func (v *VirtualK8S) UpdatePod(ctx context.Context, pod *corev1.Pod) error {
 		reflect.DeepEqual(currentPod.Labels, podCopy.Labels) {
 		return nil
 	}
-	_, err = v.client.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
+	_, err = v.client.CoreV1().Pods(TenantNamespace).Update(ctx, podCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not update pod: %v", err)
 	}
@@ -158,7 +165,8 @@ func (v *VirtualK8S) DeletePod(ctx context.Context, pod *corev1.Pod) error {
 		opts.GracePeriodSeconds = pod.DeletionGracePeriodSeconds
 	}
 
-	err := v.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, *opts)
+	podName := fmt.Sprintf("%s-%s", pod.Namespace, pod.Name)
+	err := v.client.CoreV1().Pods(TenantNamespace).Delete(ctx, podName, *opts)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("Tried to delete pod %s/%s, but it did not exist in the cluster", pod.Namespace, pod.Name)
@@ -175,7 +183,8 @@ func (v *VirtualK8S) DeletePod(ctx context.Context, pod *corev1.Pod) error {
 // concurrently outside of the calling goroutine. Therefore it is recommended
 // to return a version after DeepCopy.
 func (v *VirtualK8S) GetPod(ctx context.Context, namespace string, name string) (*corev1.Pod, error) {
-	pod, err := v.clientCache.podLister.Pods(namespace).Get(name)
+	podName := fmt.Sprintf("%s-%s", namespace, name)
+	pod, err := v.clientCache.podLister.Get(podName)
 	if err != nil {
 		klog.Error(err)
 		if errors.IsNotFound(err) {
@@ -185,6 +194,8 @@ func (v *VirtualK8S) GetPod(ctx context.Context, namespace string, name string) 
 	}
 	podCopy := pod.DeepCopy()
 	util.RecoverLabels(podCopy.Labels, podCopy.Annotations)
+	podCopy.Namespace = namespace
+	podCopy.Name = name
 	return podCopy, nil
 }
 
@@ -193,7 +204,8 @@ func (v *VirtualK8S) GetPod(ctx context.Context, namespace string, name string) 
 // concurrently outside of the calling goroutine. Therefore it is recommended
 // to return a version after DeepCopy.
 func (v *VirtualK8S) GetPodStatus(ctx context.Context, namespace string, name string) (*corev1.PodStatus, error) {
-	pod, err := v.clientCache.podLister.Pods(namespace).Get(name)
+	podName := fmt.Sprintf("%s-%s", namespace, name)
+	pod, err := v.clientCache.podLister.Get(podName)
 	if err != nil {
 		return nil, fmt.Errorf("could not get pod %s/%s: %v", namespace, name, err)
 	}
@@ -218,6 +230,10 @@ func (v *VirtualK8S) GetPods(_ context.Context) ([]*corev1.Pod, error) {
 		}
 		podCopy := p.DeepCopy()
 		util.RecoverLabels(podCopy.Labels, podCopy.Annotations)
+		//todo 需要解析出origin pod name and namespace
+		slices := strings.Split(podCopy.Name, "-")
+		podCopy.Namespace = slices[0]
+		podCopy.Name = slices[1]
 		podRefs = append(podRefs, podCopy)
 	}
 
@@ -253,7 +269,7 @@ func (v *VirtualK8S) GetContainerLogs(ctx context.Context, namespace string,
 	if opts.Follow {
 		options.Follow = opts.Follow
 	}
-	logs := v.client.CoreV1().Pods(namespace).GetLogs(podName, options)
+	logs := v.client.CoreV1().Pods(TenantNamespace).GetLogs(fmt.Sprintf("%s-%s", namespace, podName), options)
 	stream, err := logs.Stream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get stream from logs request: %v", err)
@@ -274,9 +290,9 @@ func (v *VirtualK8S) RunInContainer(ctx context.Context, namespace string, podNa
 	}()
 	req := v.client.CoreV1().RESTClient().
 		Post().
-		Namespace(namespace).
+		Namespace(TenantNamespace).
 		Resource("pods").
-		Name(podName).
+		Name(fmt.Sprintf("%s-%s", namespace, podName)).
 		SubResource("exec").
 		Timeout(0).
 		VersionedParams(&corev1.PodExecOptions{
@@ -328,6 +344,13 @@ func (v *VirtualK8S) NotifyPods(ctx context.Context, f func(*corev1.Pod)) {
 				klog.V(4).Infof("Enqueue updated pod %v", pod.Name)
 				// need trim pod, e.g. UID
 				util.RecoverLabels(pod.Labels, pod.Annotations)
+
+				if util.IsVirtualPod(pod) {
+					slices := strings.Split(pod.Name, "-")
+					pod.Namespace = slices[0]
+					pod.Name = slices[1]
+				}
+
 				f(pod)
 			case <-v.stopCh:
 				return
@@ -341,7 +364,8 @@ func (v *VirtualK8S) NotifyPods(ctx context.Context, f func(*corev1.Pod)) {
 // createSecrets takes a Kubernetes Pod and deploys it within the provider.
 func (v *VirtualK8S) createSecrets(ctx context.Context, secrets []string, ns string) error {
 	for _, secretName := range secrets {
-		_, err := v.clientCache.secretLister.Secrets(ns).Get(secretName)
+		fakeSecretName := fmt.Sprintf("%s-%s", ns, secretName)
+		_, err := v.clientCache.secretLister.Get(fakeSecretName)
 		if err == nil {
 			continue
 		}
@@ -354,6 +378,7 @@ func (v *VirtualK8S) createSecrets(ctx context.Context, secrets []string, ns str
 			return err
 		}
 		util.TrimObjectMeta(&secret.ObjectMeta)
+		util.ConvertObjectName(&secret.ObjectMeta)
 		// skip service account secret
 		if secret.Type == corev1.SecretTypeServiceAccountToken {
 			if err := v.createServiceAccount(ctx, secret); err != nil {
@@ -362,7 +387,7 @@ func (v *VirtualK8S) createSecrets(ctx context.Context, secrets []string, ns str
 			}
 		}
 		controllers.SetObjectGlobal(&secret.ObjectMeta)
-		_, err = v.client.CoreV1().Secrets(ns).Create(ctx, secret, metav1.CreateOptions{})
+		_, err = v.client.CoreV1().Secrets(TenantNamespace).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil {
 			if errors.IsAlreadyExists(err) {
 				continue
@@ -434,7 +459,8 @@ func (v *VirtualK8S) createServiceAccount(ctx context.Context, secret *corev1.Se
 // createConfigMaps a Kubernetes Pod and deploys it within the provider.
 func (v *VirtualK8S) createConfigMaps(ctx context.Context, configmaps []string, ns string) error {
 	for _, cm := range configmaps {
-		_, err := v.clientCache.cmLister.ConfigMaps(ns).Get(cm)
+		cmName := fmt.Sprintf("%s-%s", ns, cm)
+		_, err := v.clientCache.cmLister.Get(cmName)
 		if err == nil {
 			continue
 		}
@@ -445,8 +471,8 @@ func (v *VirtualK8S) createConfigMaps(ctx context.Context, configmaps []string, 
 			}
 			util.TrimObjectMeta(&configMap.ObjectMeta)
 			controllers.SetObjectGlobal(&configMap.ObjectMeta)
-
-			_, err = v.client.CoreV1().ConfigMaps(ns).Create(ctx, configMap, metav1.CreateOptions{})
+			util.ConvertObjectName(&configMap.ObjectMeta)
+			_, err = v.client.CoreV1().ConfigMaps(TenantNamespace).Create(ctx, configMap, metav1.CreateOptions{})
 			if err != nil {
 				if errors.IsAlreadyExists(err) {
 					continue
@@ -465,7 +491,8 @@ func (v *VirtualK8S) createConfigMaps(ctx context.Context, configmaps []string, 
 // deleteConfigMaps a Kubernetes Pod and deploys it within the provider.
 func (v *VirtualK8S) deleteConfigMaps(ctx context.Context, configmaps []string, ns string) error {
 	for _, cm := range configmaps {
-		err := v.client.CoreV1().ConfigMaps(ns).Delete(ctx, cm, metav1.DeleteOptions{})
+		cmName := fmt.Sprintf("%s-%s", ns, cm)
+		err := v.client.CoreV1().ConfigMaps(TenantNamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
 		if err == nil {
 			continue
 		}

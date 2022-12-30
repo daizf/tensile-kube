@@ -62,7 +62,8 @@ func TrimPod(pod *corev1.Pod, ignoreLabels []string) *corev1.Pod {
 		}
 		podCopy.Annotations[TrippedLabels] = string(trippedStr)
 	}
-
+	podCopy.Annotations[UpstreamNamespace] = pod.Namespace
+	podCopy.Annotations[UpstreamResourceName] = pod.Name
 	return podCopy
 }
 

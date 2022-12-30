@@ -71,6 +71,13 @@ const (
 	CreatedbyDescheduler = "create-by-descheduler"
 	// DescheduleCount is used for recording deschedule count
 	DescheduleCount = "sigs.k8s.io/deschedule-count"
+
+	ParentResourceName      = "virtual-kubelet.cci.io/parent-resource-name"
+	ParentResourceNamespace = "virtual-kubelet.cci.io/parent-resource-namespace"
+	UpstreamNamespace       = "virtual-kubelet.cci.io/upstream-namespace"
+	UpstreamResourceName    = "virtual-kubelet.cci.io/upstream-resource-name"
+	UpstreamClusterType     = "virtual-kubelet.cci.io/upstream-cluster-type"
+	UpstreamClusterName     = "virtual-kubelet.cci.io/upstream-cluster-name"
 )
 
 // ClustersNodeSelection is a struct including some scheduling parameters

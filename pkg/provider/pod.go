@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/virtual-kubelet/virtual-kubelet/errdefs"
@@ -231,9 +230,8 @@ func (v *VirtualK8S) GetPods(_ context.Context) ([]*corev1.Pod, error) {
 		podCopy := p.DeepCopy()
 		util.RecoverLabels(podCopy.Labels, podCopy.Annotations)
 		//todo 需要解析出origin pod name and namespace
-		slices := strings.Split(podCopy.Name, "-")
-		podCopy.Namespace = slices[0]
-		podCopy.Name = slices[1]
+		podCopy.Namespace = podCopy.Annotations[util.UpstreamNamespace]
+		podCopy.Name = podCopy.Annotations[util.UpstreamResourceName]
 		podRefs = append(podRefs, podCopy)
 	}
 
@@ -346,9 +344,8 @@ func (v *VirtualK8S) NotifyPods(ctx context.Context, f func(*corev1.Pod)) {
 				util.RecoverLabels(pod.Labels, pod.Annotations)
 
 				if util.IsVirtualPod(pod) {
-					slices := strings.Split(pod.Name, "-")
-					pod.Namespace = slices[0]
-					pod.Name = slices[1]
+					pod.Namespace = pod.Annotations[util.UpstreamNamespace]
+					pod.Name = pod.Annotations[util.UpstreamResourceName]
 				}
 
 				f(pod)

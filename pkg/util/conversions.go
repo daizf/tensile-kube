@@ -233,5 +233,5 @@ func ConvertAnnotations(annotation map[string]string) *ClustersNodeSelection {
 // ConvertObjectName 将ns拼接在name上
 func ConvertObjectName(meta *metav1.ObjectMeta) {
 	meta.Name = fmt.Sprintf("%s-%s", meta.Namespace, meta.Name)
-	meta.Namespace = "eki-burst-99999"
+	meta.Namespace = ""
 }

@@ -51,14 +51,14 @@ func (v *VirtualK8S) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 	basicPod := util.TrimPod(pod, v.ignoreLabels)
 
 	klog.V(3).Infof("Creating pod %v/%+v", pod.Namespace, pod.Name)
-	if _, err := v.clientCache.nsLister.Get(TenantNamespace); err != nil {
+	if _, err := v.clientCache.nsLister.Get(v.tenantNamespace); err != nil {
 		if !errors.IsNotFound(err) {
 			return err
 		}
 		klog.Infof("Namespace %s does not exist for pod %s, creating it", pod.Namespace, pod.Name)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: TenantNamespace,
+				Name: v.tenantNamespace,
 			},
 		}
 		if _, createErr := v.client.CoreV1().Namespaces().Create(ctx, ns,
@@ -103,7 +103,7 @@ func (v *VirtualK8S) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 		return fmt.Errorf("create secrets failed: %v", err)
 	}
 	klog.V(6).Infof("Creating pod %+v", pod)
-	_, err = v.client.CoreV1().Pods(TenantNamespace).Create(ctx, basicPod, metav1.CreateOptions{})
+	_, err = v.client.CoreV1().Pods(v.tenantNamespace).Create(ctx, basicPod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not create pod: %v", err)
 	}
@@ -137,7 +137,7 @@ func (v *VirtualK8S) UpdatePod(ctx context.Context, pod *corev1.Pod) error {
 		reflect.DeepEqual(currentPod.Labels, podCopy.Labels) {
 		return nil
 	}
-	_, err = v.client.CoreV1().Pods(TenantNamespace).Update(ctx, podCopy, metav1.UpdateOptions{})
+	_, err = v.client.CoreV1().Pods(v.tenantNamespace).Update(ctx, podCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("could not update pod: %v", err)
 	}
@@ -165,7 +165,7 @@ func (v *VirtualK8S) DeletePod(ctx context.Context, pod *corev1.Pod) error {
 	}
 
 	podName := fmt.Sprintf("%s-%s", pod.Namespace, pod.Name)
-	err := v.client.CoreV1().Pods(TenantNamespace).Delete(ctx, podName, *opts)
+	err := v.client.CoreV1().Pods(v.tenantNamespace).Delete(ctx, podName, *opts)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("Tried to delete pod %s/%s, but it did not exist in the cluster", pod.Namespace, pod.Name)
@@ -267,7 +267,7 @@ func (v *VirtualK8S) GetContainerLogs(ctx context.Context, namespace string,
 	if opts.Follow {
 		options.Follow = opts.Follow
 	}
-	logs := v.client.CoreV1().Pods(TenantNamespace).GetLogs(fmt.Sprintf("%s-%s", namespace, podName), options)
+	logs := v.client.CoreV1().Pods(v.tenantNamespace).GetLogs(fmt.Sprintf("%s-%s", namespace, podName), options)
 	stream, err := logs.Stream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get stream from logs request: %v", err)
@@ -288,7 +288,7 @@ func (v *VirtualK8S) RunInContainer(ctx context.Context, namespace string, podNa
 	}()
 	req := v.client.CoreV1().RESTClient().
 		Post().
-		Namespace(TenantNamespace).
+		Namespace(v.tenantNamespace).
 		Resource("pods").
 		Name(fmt.Sprintf("%s-%s", namespace, podName)).
 		SubResource("exec").
@@ -384,7 +384,7 @@ func (v *VirtualK8S) createSecrets(ctx context.Context, secrets []string, ns str
 			}
 		}
 		controllers.SetObjectGlobal(&secret.ObjectMeta)
-		_, err = v.client.CoreV1().Secrets(TenantNamespace).Create(ctx, secret, metav1.CreateOptions{})
+		_, err = v.client.CoreV1().Secrets(v.tenantNamespace).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil {
 			if errors.IsAlreadyExists(err) {
 				continue
@@ -469,7 +469,7 @@ func (v *VirtualK8S) createConfigMaps(ctx context.Context, configmaps []string, 
 			util.TrimObjectMeta(&configMap.ObjectMeta)
 			controllers.SetObjectGlobal(&configMap.ObjectMeta)
 			util.ConvertObjectName(&configMap.ObjectMeta)
-			_, err = v.client.CoreV1().ConfigMaps(TenantNamespace).Create(ctx, configMap, metav1.CreateOptions{})
+			_, err = v.client.CoreV1().ConfigMaps(v.tenantNamespace).Create(ctx, configMap, metav1.CreateOptions{})
 			if err != nil {
 				if errors.IsAlreadyExists(err) {
 					continue
@@ -489,7 +489,7 @@ func (v *VirtualK8S) createConfigMaps(ctx context.Context, configmaps []string, 
 func (v *VirtualK8S) deleteConfigMaps(ctx context.Context, configmaps []string, ns string) error {
 	for _, cm := range configmaps {
 		cmName := fmt.Sprintf("%s-%s", ns, cm)
-		err := v.client.CoreV1().ConfigMaps(TenantNamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
+		err := v.client.CoreV1().ConfigMaps(v.tenantNamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
 		if err == nil {
 			continue
 		}

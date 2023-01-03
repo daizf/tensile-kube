@@ -114,6 +114,7 @@ func TestUpdatePod(t *testing.T) {
 			if c.existPod != nil {
 				cachePod := c.pod.DeepCopy()
 				util.ConvertObjectName(&cachePod.ObjectMeta)
+				cachePod.Namespace = c.pod.Namespace
 				podInformer.Informer().GetStore().Add(cachePod)
 			}
 			err := vk.UpdatePod(ctx, c.pod)
@@ -206,6 +207,7 @@ func TestGetPod(t *testing.T) {
 			if c.existPod != nil {
 				cachePod := c.pod.DeepCopy()
 				util.ConvertObjectName(&cachePod.ObjectMeta)
+				cachePod.Namespace = c.pod.Namespace
 				podInformer.Informer().GetStore().Add(cachePod)
 			}
 			_, err := vk.GetPod(ctx, c.pod.Namespace, c.pod.Name)

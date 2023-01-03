@@ -50,6 +50,7 @@ var (
 	enableControllers    = ""
 	enableServiceAccount = true
 	providerName         = "k8s"
+	clusterId            = ""
 )
 
 func main() {
@@ -59,6 +60,7 @@ func main() {
 	flags.IntVar(&cc.KubeClientBurst, "client-burst", 1000, "qpi burst for client cluster.")
 	flags.IntVar(&cc.KubeClientQPS, "client-qps", 500, "qpi qps for client cluster.")
 	flags.StringVar(&cc.ClientKubeConfigPath, "client-kubeconfig", "", "kube config for client cluster.")
+	flags.StringVar(&clusterId, "cluster-id", "default", "identity for master cluster.")
 	flags.StringVar(&ignoreLabels, "ignore-labels", util.BatchPodLabel,
 		fmt.Sprintf("ignore-labels are the labels we would like to ignore when build pod for client clusters, "+
 			"usually these labels will infulence schedule, default %v, multi labels should be seperated by comma(,"+
@@ -88,7 +90,7 @@ func main() {
 		cli.WithBaseOpts(o),
 		cli.WithProvider(providerName, func(cfg provider.InitConfig) (provider.Provider, error) {
 			cfg.ConfigPath = o.KubeConfigPath
-			provider, err := k8sprovider.NewVirtualK8S(cfg, &cc, ignoreLabels, enableServiceAccount, o)
+			provider, err := k8sprovider.NewVirtualK8S(cfg, &cc, ignoreLabels, enableServiceAccount, clusterId, o)
 			if err == nil {
 				go RunController(ctx, provider, cfg.NodeName, numberOfWorkers)
 			}

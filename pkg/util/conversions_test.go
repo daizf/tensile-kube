@@ -50,8 +50,10 @@ func TestTrimPod(t *testing.T) {
 
 	desired := &corev1.Pod{
 		ObjectMeta: v1.ObjectMeta{
-			Name:   "testbase",
-			Labels: map[string]string{"virtual-pod": "true"},
+			Name:        "testbase",
+			Namespace:   "default",
+			Labels:      map[string]string{"virtual-pod": "true"},
+			Annotations: map[string]string{UpstreamNamespace: "default", UpstreamResourceName: "testbase"},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -76,9 +78,9 @@ func TestTrimPod(t *testing.T) {
 	desired1 := desired.DeepCopy()
 	desired2 := desired.DeepCopy()
 
-	desired1.Annotations = map[string]string{"clusterSelector": `{"nodeSelector":{"test": "test"}}`}
+	desired1.Annotations["clusterSelector"] = `{"nodeSelector":{"test": "test"}}`
 	desired1.Spec.NodeSelector = map[string]string{"test": "test"}
-	desired2.Annotations = map[string]string{"tripped-labels": `{"test":"test"}`}
+	desired2.Annotations["tripped-labels"] = `{"test":"test"}`
 
 	basePod := testbase.PodForTest()
 	basePod1 := basePod.DeepCopy()

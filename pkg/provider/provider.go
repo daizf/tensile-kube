@@ -40,11 +40,6 @@ import (
 	"github.com/virtual-kubelet/tensile-kube/pkg/util"
 )
 
-const (
-	// TenantNamespace 在共享集群中租户的namespace，CLUSTER_ID 为Serverless K8s集群ID
-	TenantNamespace = "eki-burst-99999"
-)
-
 // ClientConfig defines the configuration of a lower cluster
 type ClientConfig struct {
 	// allowed qps of the kube client
@@ -82,13 +77,16 @@ type VirtualK8S struct {
 	stopCh               <-chan struct{}
 	providerNode         *common.ProviderNode
 	configured           bool
+	tenantNamespace      string
 }
 
 // NewVirtualK8S reads a kubeconfig file and sets up a client to interact
 // with lower cluster
 func NewVirtualK8S(cfg provider.InitConfig, cc *ClientConfig,
-	ignoreLabelsStr string, enableServiceAccount bool, opts *opts.Opts) (*VirtualK8S, error) {
+	ignoreLabelsStr string, enableServiceAccount bool, clusterId string, opts *opts.Opts) (*VirtualK8S, error) {
 	ignoreLabels := strings.Split(ignoreLabelsStr, ",")
+	// tenantNamespace 在共享集群中租户的namespace，CLUSTER_ID 为Serverless K8s集群ID
+	tenantNamespace := fmt.Sprintf("eki-burst-%s", clusterId)
 	if len(cc.ClientKubeConfigPath) == 0 {
 		panic("client kubeconfig path can not be empty")
 	}
@@ -148,17 +146,18 @@ func NewVirtualK8S(cfg provider.InitConfig, cc *ClientConfig,
 		config:               clientConfig,
 		enableServiceAccount: enableServiceAccount,
 		clientCache: clientCache{
-			podLister:    podInformer.Lister().Pods(TenantNamespace),
+			podLister:    podInformer.Lister().Pods(tenantNamespace),
 			nsLister:     nsInformer.Lister(),
-			cmLister:     cmInformer.Lister().ConfigMaps(TenantNamespace),
-			secretLister: secretInformer.Lister().Secrets(TenantNamespace),
+			cmLister:     cmInformer.Lister().ConfigMaps(tenantNamespace),
+			secretLister: secretInformer.Lister().Secrets(tenantNamespace),
 			nodeLister:   nodeInformer.Lister(),
 		},
-		rm:           cfg.ResourceManager,
-		updatedNode:  make(chan *corev1.Node, 100),
-		updatedPod:   make(chan *corev1.Pod, 100000),
-		providerNode: &common.ProviderNode{},
-		stopCh:       ctx.Done(),
+		rm:              cfg.ResourceManager,
+		updatedNode:     make(chan *corev1.Node, 100),
+		updatedPod:      make(chan *corev1.Pod, 100000),
+		providerNode:    &common.ProviderNode{},
+		stopCh:          ctx.Done(),
+		tenantNamespace: tenantNamespace,
 	}
 
 	virtualK8S.buildNodeInformer(nodeInformer)

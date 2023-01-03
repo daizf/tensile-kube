@@ -34,7 +34,8 @@ func PodForTest() *v1.Pod {
 	defaultMode := int32(420)
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "testbase",
+			Name:      "testbase",
+			Namespace: "default",
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{

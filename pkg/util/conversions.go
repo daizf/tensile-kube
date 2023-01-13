@@ -79,8 +79,8 @@ func ConvertPodRef(pod *corev1.Pod) *corev1.Pod {
 	}
 
 	if pod.Spec.ImagePullSecrets != nil {
-		for _, s := range pod.Spec.ImagePullSecrets {
-			s.Name = fmt.Sprintf("%s-%s", pod.Namespace, s.Name)
+		for i, s := range pod.Spec.ImagePullSecrets {
+			pod.Spec.ImagePullSecrets[i].Name = fmt.Sprintf("%s-%s", pod.Namespace, s.Name)
 		}
 	}
 

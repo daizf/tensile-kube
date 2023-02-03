@@ -62,8 +62,6 @@ func TrimPod(pod *corev1.Pod, ignoreLabels []string) *corev1.Pod {
 		}
 		podCopy.Annotations[TrippedLabels] = string(trippedStr)
 	}
-	podCopy.Annotations[UpstreamNamespace] = pod.Namespace
-	podCopy.Annotations[UpstreamResourceName] = pod.Name
 	return podCopy
 }
 
@@ -75,6 +73,9 @@ func ConvertPodRef(pod *corev1.Pod) *corev1.Pod {
 		}
 		if v.ConfigMap != nil {
 			v.ConfigMap.Name = fmt.Sprintf("%s-%s", pod.Namespace, v.ConfigMap.Name)
+		}
+		if v.PersistentVolumeClaim != nil {
+			v.PersistentVolumeClaim.ClaimName = fmt.Sprintf("%s-%s", pod.Namespace, v.PersistentVolumeClaim.ClaimName)
 		}
 	}
 
@@ -234,4 +235,11 @@ func ConvertAnnotations(annotation map[string]string) *ClustersNodeSelection {
 func ConvertObjectName(meta *metav1.ObjectMeta) {
 	meta.Name = fmt.Sprintf("%s-%s", meta.Namespace, meta.Name)
 	meta.Namespace = ""
+}
+
+// SetUpstreamAnnotations 追加原始ns name信息
+func SetUpstreamAnnotations(obj *metav1.ObjectMeta, clusterId string) {
+	obj.Annotations[UpstreamNamespace] = obj.Namespace
+	obj.Annotations[UpstreamResourceName] = obj.Name
+	obj.Annotations[UpstreamClusterId] = clusterId
 }

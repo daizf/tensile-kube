@@ -53,7 +53,8 @@ func TestTrimPod(t *testing.T) {
 			Name:        "testbase",
 			Namespace:   "default",
 			Labels:      map[string]string{"virtual-pod": "true"},
-			Annotations: map[string]string{UpstreamNamespace: "default", UpstreamResourceName: "testbase"},
+			Annotations: map[string]string{},
+			//Annotations: map[string]string{UpstreamNamespace: "default", UpstreamResourceName: "testbase"},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{

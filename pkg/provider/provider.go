@@ -77,7 +77,7 @@ type VirtualK8S struct {
 	stopCh               <-chan struct{}
 	providerNode         *common.ProviderNode
 	configured           bool
-	tenantNamespace      string
+	clusterId            string
 }
 
 // NewVirtualK8S reads a kubeconfig file and sets up a client to interact
@@ -121,12 +121,12 @@ func NewVirtualK8S(cfg provider.InitConfig, cc *ClientConfig,
 		return nil, fmt.Errorf("could not get target cluster server version: %v", err)
 	}
 
-	//// todo 根据cluster-id来过滤（Client集群是多租户）
+	// todo 根据cluster-id来过滤（Client集群是多租户）
 	//labelOptions := kubeinformers.WithTweakListOptions(func(opts *metav1.ListOptions) {
 	//	opts.LabelSelector = "cluster-id=8888-8888-9999-9999"
 	//})
 
-	informer := kubeinformers.NewSharedInformerFactory(client, 0)
+	informer := kubeinformers.NewSharedInformerFactoryWithOptions(client, 0, kubeinformers.WithNamespace(tenantNamespace))
 	podInformer := informer.Core().V1().Pods()
 	nsInformer := informer.Core().V1().Namespaces()
 	nodeInformer := informer.Core().V1().Nodes()
@@ -152,12 +152,12 @@ func NewVirtualK8S(cfg provider.InitConfig, cc *ClientConfig,
 			secretLister: secretInformer.Lister().Secrets(tenantNamespace),
 			nodeLister:   nodeInformer.Lister(),
 		},
-		rm:              cfg.ResourceManager,
-		updatedNode:     make(chan *corev1.Node, 100),
-		updatedPod:      make(chan *corev1.Pod, 100000),
-		providerNode:    &common.ProviderNode{},
-		stopCh:          ctx.Done(),
-		tenantNamespace: tenantNamespace,
+		rm:           cfg.ResourceManager,
+		updatedNode:  make(chan *corev1.Node, 100),
+		updatedPod:   make(chan *corev1.Pod, 100000),
+		providerNode: &common.ProviderNode{},
+		stopCh:       ctx.Done(),
+		clusterId:    clusterId,
 	}
 
 	virtualK8S.buildNodeInformer(nodeInformer)
@@ -186,6 +186,14 @@ func (v *VirtualK8S) GetMaster() kubernetes.Interface {
 // GetNameSpaceLister returns the namespace cache
 func (v *VirtualK8S) GetNameSpaceLister() v1.NamespaceLister {
 	return v.clientCache.nsLister
+}
+
+func (v *VirtualK8S) TenantNamespace() string {
+	return fmt.Sprintf("eki-burst-%s", v.clusterId)
+}
+
+func (v *VirtualK8S) GetClusterId() string {
+	return v.clusterId
 }
 
 func (v *VirtualK8S) buildNodeInformer(nodeInformer informerv1.NodeInformer) {

@@ -77,7 +77,7 @@ const (
 	UpstreamNamespace       = "virtual-kubelet.cci.io/upstream-namespace"
 	UpstreamResourceName    = "virtual-kubelet.cci.io/upstream-resource-name"
 	UpstreamClusterType     = "virtual-kubelet.cci.io/upstream-cluster-type"
-	UpstreamClusterName     = "virtual-kubelet.cci.io/upstream-cluster-name"
+	UpstreamClusterId       = "virtual-kubelet.cci.io/upstream-cluster-id"
 )
 
 // ClustersNodeSelection is a struct including some scheduling parameters

@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -63,12 +64,13 @@ type PVController struct {
 	clientPVLister        corelisters.PersistentVolumeLister
 	clientPVListerSynced  cache.InformerSynced
 
-	hostIP string
+	hostIP    string
+	clusterId string
 }
 
 // NewPVController returns a new *PVController
 func NewPVController(master kubernetes.Interface, client kubernetes.Interface,
-	masterInformer, clientInformer informers.SharedInformerFactory, hostIP string) Controller {
+	masterInformer, clientInformer informers.SharedInformerFactory, hostIP string, clusterId string) Controller {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: master.CoreV1().Events(v1.NamespaceAll)})
 	var eventRecorder record.EventRecorder
@@ -90,6 +92,7 @@ func NewPVController(master kubernetes.Interface, client kubernetes.Interface,
 		pvcMasterQueue: workqueue.NewNamedRateLimitingQueue(pvcRateLimiter, "vk pvc controller"),
 		pvMasterQueue:  workqueue.NewNamedRateLimitingQueue(pvRateLimiter, "vk pv controller"),
 		hostIP:         hostIP,
+		clusterId:      clusterId,
 	}
 	pvcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: ctrl.pvcInMasterUpdated,
@@ -103,6 +106,7 @@ func NewPVController(master kubernetes.Interface, client kubernetes.Interface,
 	ctrl.masterPVLister = pvInformer.Lister()
 	ctrl.masterPVListerSynced = pvInformer.Informer().HasSynced
 
+	// todo 只能从lower向upper同步，原因是后端有多个资源供给形态，必须采用WaitForFirstConsume的方式。
 	clientPVCInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// AddFunc:    ctrl.pvcAdded,
 		UpdateFunc: ctrl.pvcInClientUpdated,
@@ -172,6 +176,11 @@ func (ctrl *PVController) pvcInClientUpdated(old, new interface{}) {
 		return
 	}
 
+	// todo 判断是否属于本集群
+	if ctrl.clusterId != newPVC.Annotations[util.UpstreamClusterId] {
+		return
+	}
+
 	if ctrl.shouldEnqueue(&newPVC.ObjectMeta) {
 		key, err := cache.MetaNamespaceKeyFunc(new)
 		if err != nil {
@@ -227,6 +236,7 @@ func (ctrl *PVController) pvInClientAdded(obj interface{}) {
 	if !IsObjectGlobal(&pv.ObjectMeta) {
 		return
 	}
+	// todo 判断是否属于本集群
 
 	if ctrl.shouldEnqueue(&pv.ObjectMeta) {
 		key, err := cache.MetaNamespaceKeyFunc(obj)
@@ -252,6 +262,7 @@ func (ctrl *PVController) pvInClientUpdated(old, new interface{}) {
 	if !IsObjectGlobal(&newPV.ObjectMeta) {
 		return
 	}
+	// todo 判断是否属于本集群
 
 	if ctrl.shouldEnqueue(&newPV.ObjectMeta) {
 		key, err := cache.MetaNamespaceKeyFunc(new)
@@ -345,11 +356,13 @@ func (ctrl *PVController) syncPVCFromMaster() {
 	var pvc *v1.PersistentVolumeClaim
 	deletePVCInClient := false
 	pvc, err = ctrl.masterPVCLister.PersistentVolumeClaims(namespace).Get(pvcName)
+	clientPvcName := fmt.Sprintf("%s-%s", namespace, pvcName)
 	if err != nil {
 		if !apierrs.IsNotFound(err) {
 			return
 		}
-		_, err = ctrl.clientPVCLister.PersistentVolumeClaims(namespace).Get(pvcName)
+		// 需要decode
+		_, err = ctrl.clientPVCLister.PersistentVolumeClaims(ctrl.TenantNamespace()).Get(clientPvcName)
 		if err != nil {
 			if !apierrs.IsNotFound(err) {
 				klog.Errorf("Get pvc from master cluster failed, error: %v", err)
@@ -360,11 +373,10 @@ func (ctrl *PVController) syncPVCFromMaster() {
 			return
 		}
 		deletePVCInClient = true
-
 	}
 
 	if deletePVCInClient || pvc.DeletionTimestamp != nil {
-		if err = ctrl.client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.TODO(), pvcName,
+		if err = ctrl.client.CoreV1().PersistentVolumeClaims(ctrl.TenantNamespace()).Delete(context.TODO(), clientPvcName,
 			metav1.DeleteOptions{}); err != nil {
 			if !apierrs.IsNotFound(err) {
 				klog.Errorf("Delete pvc from client cluster failed, error: %v", err)
@@ -378,15 +390,17 @@ func (ctrl *PVController) syncPVCFromMaster() {
 
 	// capacity updated
 	var old *v1.PersistentVolumeClaim
-	old, err = ctrl.clientPVCLister.PersistentVolumeClaims(namespace).Get(pvcName)
+	old, err = ctrl.clientPVCLister.PersistentVolumeClaims(ctrl.TenantNamespace()).Get(clientPvcName)
 	if err != nil {
 		klog.Errorf("Get pvc from client cluster failed, error: %v", err)
 		return
 	}
 
+	pvc.Name = clientPvcName
+	pvc.Namespace = ctrl.TenantNamespace()
 	_, err = ctrl.patchPVC(old, pvc, ctrl.client, false)
 	if err != nil {
-		klog.Errorf("Get pvc from client cluster failed, error: %v", err)
+		klog.Errorf("Patch pvc to client cluster failed, error: %v", err)
 		return
 	}
 }
@@ -498,8 +512,13 @@ func (ctrl *PVController) syncPVCStatusHandler(pvc *v1.PersistentVolumeClaim) {
 			return
 		}
 	}()
+
+	pvcCopy := pvc.DeepCopy()
+	// restore origin name ns
+	pvcCopy.Namespace = pvc.Annotations[util.UpstreamNamespace]
+	pvcCopy.Name = pvc.Annotations[util.UpstreamResourceName]
 	var pvcInMaster *v1.PersistentVolumeClaim
-	pvcInMaster, err = ctrl.masterPVCLister.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name)
+	pvcInMaster, err = ctrl.masterPVCLister.PersistentVolumeClaims(pvcCopy.Namespace).Get(pvcCopy.Name)
 	if err != nil {
 		if !apierrs.IsNotFound(err) {
 			return
@@ -509,7 +528,6 @@ func (ctrl *PVController) syncPVCStatusHandler(pvc *v1.PersistentVolumeClaim) {
 		return
 	}
 
-	pvcCopy := pvc.DeepCopy()
 	if err = filterPVC(pvcCopy, ctrl.hostIP); err != nil {
 		return
 	}
@@ -546,13 +564,20 @@ func (ctrl *PVController) syncPVStatusHandler(pv *v1.PersistentVolume) {
 		filterPV(pvInMaster, ctrl.hostIP)
 		if pvCopy.Spec.ClaimRef != nil || pvInMaster.Spec.ClaimRef == nil {
 			claim := pvCopy.Spec.ClaimRef
+			// 根据PV Ref到client查询PVC
+			clientPVC, err := ctrl.clientPVCLister.PersistentVolumeClaims(claim.Namespace).Get(claim.Name)
+			if err != nil {
+				return
+			}
 			var newPVC *v1.PersistentVolumeClaim
-			newPVC, err = ctrl.masterPVCLister.PersistentVolumeClaims(claim.Namespace).Get(claim.Name)
+			newPVC, err = ctrl.masterPVCLister.PersistentVolumeClaims(clientPVC.Annotations[util.UpstreamNamespace]).Get(clientPVC.Annotations[util.UpstreamResourceName])
 			if err != nil {
 				return
 			}
 			pvInMaster.Spec.ClaimRef.UID = newPVC.UID
 			pvInMaster.Spec.ClaimRef.ResourceVersion = newPVC.ResourceVersion
+			pvInMaster.Spec.ClaimRef.Name = newPVC.Name
+			pvInMaster.Spec.ClaimRef.Namespace = newPVC.Namespace
 		}
 		pvInMaster, err = ctrl.master.CoreV1().PersistentVolumes().Create(context.TODO(),
 			pvInMaster, metav1.CreateOptions{})
@@ -570,13 +595,21 @@ func (ctrl *PVController) syncPVStatusHandler(pv *v1.PersistentVolume) {
 
 	if pvCopy.Spec.ClaimRef != nil || pvInMaster.Spec.ClaimRef == nil {
 		claim := pvCopy.Spec.ClaimRef
+		// 根据PV Ref到client查询PVC
+		clientPVC, err := ctrl.clientPVCLister.PersistentVolumeClaims(claim.Namespace).Get(claim.Name)
+		if err != nil {
+			return
+		}
+
 		var newPVC *v1.PersistentVolumeClaim
-		newPVC, err = ctrl.masterPVCLister.PersistentVolumeClaims(claim.Namespace).Get(claim.Name)
+		newPVC, err = ctrl.masterPVCLister.PersistentVolumeClaims(clientPVC.Annotations[util.UpstreamNamespace]).Get(clientPVC.Annotations[util.UpstreamResourceName])
 		if err != nil {
 			return
 		}
 		pvCopy.Spec.ClaimRef.UID = newPVC.UID
 		pvCopy.Spec.ClaimRef.ResourceVersion = newPVC.ResourceVersion
+		pvInMaster.Spec.ClaimRef.Name = newPVC.Name
+		pvInMaster.Spec.ClaimRef.Namespace = newPVC.Namespace
 	}
 
 	klog.V(5).Infof("Old pv %+v\n, new %+v", pvInMaster, pvCopy)
@@ -657,6 +690,9 @@ func (ctrl *PVController) patchPV(pv, clone *v1.PersistentVolume,
 	clone.Spec.NodeAffinity = pv.Spec.NodeAffinity
 	clone.UID = pv.UID
 	clone.ResourceVersion = pv.ResourceVersion
+	// todo 引用的地方有变更
+	clone.Finalizers = pv.Finalizers
+	clone.Spec.ClaimRef = pv.Spec.ClaimRef
 	patch, err := util.CreateMergePatch(pv, clone)
 	if err != nil {
 		return pv, err
@@ -718,4 +754,8 @@ func (ctrl *PVController) gc() {
 
 func (ctrl *PVController) runGC(stopCh <-chan struct{}) {
 	wait.Until(ctrl.gc, 3*time.Minute, stopCh)
+}
+
+func (ctrl *PVController) TenantNamespace() string {
+	return fmt.Sprintf("eki-burst-%s", ctrl.clusterId)
 }

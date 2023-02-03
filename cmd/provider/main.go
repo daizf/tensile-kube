@@ -124,7 +124,7 @@ func RunController(ctx context.Context, p *k8sprovider.VirtualK8S, hostIP string
 	if masterInformer == nil {
 		return nil
 	}
-	clientInformer := kubeinformers.NewSharedInformerFactory(client, 1*time.Minute)
+	clientInformer := kubeinformers.NewSharedInformerFactoryWithOptions(client, 1*time.Minute, kubeinformers.WithNamespace(p.TenantNamespace()))
 	if clientInformer == nil {
 		return nil
 	}
@@ -138,7 +138,7 @@ func RunController(ctx context.Context, p *k8sprovider.VirtualK8S, hostIP string
 		}
 		switch c {
 		case "PVControllers":
-			pvCtrl := controllers.NewPVController(master, client, masterInformer, clientInformer, hostIP)
+			pvCtrl := controllers.NewPVController(master, client, masterInformer, clientInformer, hostIP, p.GetClusterId())
 			runningControllers = append(runningControllers, pvCtrl)
 		case "ServiceControllers":
 			serviceCtrl := controllers.NewServiceController(master, client, masterInformer, clientInformer, p.GetNameSpaceLister())

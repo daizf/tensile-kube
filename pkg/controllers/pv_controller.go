@@ -204,7 +204,7 @@ func (ctrl *PVController) pvcInMasterUpdated(old, new interface{}) {
 			return
 		}
 		ctrl.pvcMasterQueue.Add(key)
-		klog.V(6).Info("PVC update in master", "key ", key)
+		klog.V(6).Info("PVC update in master cluster", "key ", key)
 	} else {
 		klog.V(6).Infof("Ignoring pvc %q change", newPVC.Name)
 	}
@@ -425,6 +425,7 @@ func (ctrl *PVController) syncPVStatusFromClient() {
 	}()
 	pvNeedDelete := false
 	if err != nil {
+		klog.Errorf("Get pv %q from client failed, error: %v", pvName, err)
 		if !apierrs.IsNotFound(err) {
 			return
 		}
@@ -436,16 +437,16 @@ func (ctrl *PVController) syncPVStatusFromClient() {
 		if err = ctrl.master.CoreV1().PersistentVolumes().Delete(context.TODO(), pvName,
 			metav1.DeleteOptions{}); err != nil {
 			if !apierrs.IsNotFound(err) {
-				klog.Errorf("Delete pvc from master cluster failed, error: %v", err)
+				klog.Errorf("Delete pv %q from master failed, error: %v", pvName, err)
 				return
 			}
 			err = nil
 		}
-		klog.V(3).Infof("PV %q deleted", pvName)
+		klog.V(3).Infof("PV %q deleted in master cluster", pvName)
 		return
 	}
 
-	klog.V(4).Infof("PV %v to be update or create", pvName)
+	klog.V(4).Infof("PV %q to be update or create in master cluster", pvName)
 	ctrl.syncPVStatusHandler(pv)
 }
 
@@ -471,14 +472,15 @@ func (ctrl *PVController) syncPVFromMaster() {
 	pvNeedDelete := false
 	if err != nil {
 		if !apierrs.IsNotFound(err) {
-			klog.Errorf("Error getting pv %q: %v", pvName, err)
+			klog.Errorf("Error getting pv %q from master: %v", pvName, err)
 			return
 		}
+		err = nil
 		// Double check
 		_, err = ctrl.master.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
 		if err != nil {
 			if !apierrs.IsNotFound(err) {
-				klog.Errorf("Error getting pv %q: %v", pvName, err)
+				klog.Errorf("Error getting pv %q from master: %v", pvName, err)
 				return
 			}
 			pvNeedDelete = true
@@ -490,15 +492,16 @@ func (ctrl *PVController) syncPVFromMaster() {
 		if err = ctrl.client.CoreV1().PersistentVolumes().Delete(ctx, pvName,
 			metav1.DeleteOptions{}); err != nil {
 			if !apierrs.IsNotFound(err) {
-				klog.Errorf("Delete pvc from client cluster failed, error: %v", err)
+				klog.Errorf("Delete pv %q from client cluster failed, error: %v", pvName, err)
 				return
 			}
 			err = nil
 		}
-		klog.V(3).Infof("PV %q deleted", pvName)
+		klog.V(3).Infof("PV %q deleted in client cluster", pvName)
 		return
 	}
 }
+
 func (ctrl *PVController) syncPVCStatusHandler(pvc *v1.PersistentVolumeClaim) {
 	key, err := cache.MetaNamespaceKeyFunc(pvc)
 	if err != nil {
@@ -524,7 +527,8 @@ func (ctrl *PVController) syncPVCStatusHandler(pvc *v1.PersistentVolumeClaim) {
 			return
 		}
 		err = nil
-		klog.Warningf("pvc %v has been deleted from master client", pvc.Name)
+		// todo 没看懂
+		klog.Warningf("pvc %v has been deleted from master", pvcCopy.Name)
 		return
 	}
 
@@ -560,6 +564,7 @@ func (ctrl *PVController) syncPVStatusHandler(pv *v1.PersistentVolume) {
 		if !apierrs.IsNotFound(err) {
 			return
 		}
+		err = nil
 		pvInMaster = pv.DeepCopy()
 		filterPV(pvInMaster, ctrl.hostIP)
 		if pvCopy.Spec.ClaimRef != nil || pvInMaster.Spec.ClaimRef == nil {

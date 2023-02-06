@@ -141,7 +141,7 @@ func RunController(ctx context.Context, p *k8sprovider.VirtualK8S, hostIP string
 			pvCtrl := controllers.NewPVController(master, client, masterInformer, clientInformer, hostIP, p.GetClusterId())
 			runningControllers = append(runningControllers, pvCtrl)
 		case "ServiceControllers":
-			serviceCtrl := controllers.NewServiceController(master, client, masterInformer, clientInformer, p.GetNameSpaceLister())
+			serviceCtrl := controllers.NewServiceController(master, client, masterInformer, clientInformer, p.GetNameSpaceLister(), p.GetClusterId())
 			runningControllers = append(runningControllers, serviceCtrl)
 		default:
 			klog.Warningf("Skip: %v", c)
@@ -162,7 +162,7 @@ func buildCommonControllers(client kubernetes.Interface, masterInformer,
 	configMapRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
 	secretRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
 
-	return controllers.NewCommonController(client, masterInformer, clientInformer, configMapRateLimiter, secretRateLimiter)
+	return controllers.NewCommonController(client, masterInformer, clientInformer, configMapRateLimiter, secretRateLimiter, clusterId)
 }
 
 func rateLimiter() workqueue.RateLimiter {

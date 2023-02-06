@@ -58,13 +58,14 @@ type ServiceController struct {
 	clientEndpointsLister       corelisters.EndpointsLister
 	clientEndpointsListerSynced cache.InformerSynced
 
-	nsLister corelisters.NamespaceLister
+	nsLister  corelisters.NamespaceLister
+	clusterId string
 }
 
 // NewServiceController returns a new *ServiceController
 func NewServiceController(master kubernetes.Interface, client kubernetes.Interface,
 	masterInformer, clientInformer informers.SharedInformerFactory,
-	nsLister corelisters.NamespaceLister) Controller {
+	nsLister corelisters.NamespaceLister, clusterId string) Controller {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: master.CoreV1().Events(v1.NamespaceAll)})
 	var eventRecorder record.EventRecorder
@@ -84,6 +85,7 @@ func NewServiceController(master kubernetes.Interface, client kubernetes.Interfa
 		nsLister:       nsLister,
 		serviceQueue:   workqueue.NewNamedRateLimitingQueue(serviceRateLimiter, "vk service controller"),
 		endpointsQueue: workqueue.NewNamedRateLimitingQueue(endpointsRateLimiter, "vk endpoints controller"),
+		clusterId:      clusterId,
 	}
 	serviceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.serviceAdded,

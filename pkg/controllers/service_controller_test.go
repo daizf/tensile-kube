@@ -433,7 +433,7 @@ func newServiceController() *svcTestBase {
 	masterInformer := informers.NewSharedInformerFactory(master, controller.NoResyncPeriodFunc())
 
 	nsLister := masterInformer.Core().V1().Namespaces().Lister()
-	controller := NewServiceController(master, client, masterInformer, clientInformer, nsLister)
+	controller := NewServiceController(master, client, masterInformer, clientInformer, nsLister, "default")
 	c := controller.(*ServiceController)
 	return &svcTestBase{
 		c:              c,

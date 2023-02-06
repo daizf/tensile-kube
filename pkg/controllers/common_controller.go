@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -53,16 +54,18 @@ type CommonController struct {
 	masterSecretLister          corelisters.SecretLister
 	masterSecretListerSynced    cache.InformerSynced
 
-	clientConfigMapLister       corelisters.ConfigMapLister
+	clientConfigMapLister       corelisters.ConfigMapNamespaceLister
 	clientConfigMapListerSynced cache.InformerSynced
-	clientSecretLister          corelisters.SecretLister
+	clientSecretLister          corelisters.SecretNamespaceLister
 	clientSecretListerSynced    cache.InformerSynced
+	clusterId                   string
 }
 
 // NewCommonController returns a new *CommonController
 func NewCommonController(client kubernetes.Interface,
 	masterInformer, clientInformer informers.SharedInformerFactory,
-	configMapRateLimiter, secretRateLimiter workqueue.RateLimiter) Controller {
+	configMapRateLimiter, secretRateLimiter workqueue.RateLimiter,
+	clusterId string) Controller {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.CoreV1().Events(v1.NamespaceAll)})
 	var eventRecorder record.EventRecorder
@@ -72,6 +75,7 @@ func NewCommonController(client kubernetes.Interface,
 	secretInformer := masterInformer.Core().V1().Secrets()
 	clientConfigMapInformer := clientInformer.Core().V1().ConfigMaps()
 	clientSecretInformer := clientInformer.Core().V1().Secrets()
+	tenantNamespace := fmt.Sprintf("eki-burst-%s", clusterId)
 	ctrl := &CommonController{
 		client:        client,
 		eventRecorder: eventRecorder,
@@ -84,10 +88,12 @@ func NewCommonController(client kubernetes.Interface,
 		masterSecretLister:          secretInformer.Lister(),
 		masterSecretListerSynced:    secretInformer.Informer().HasSynced,
 
-		clientConfigMapLister:       clientConfigMapInformer.Lister(),
+		clientConfigMapLister:       clientConfigMapInformer.Lister().ConfigMaps(tenantNamespace),
 		clientConfigMapListerSynced: clientConfigMapInformer.Informer().HasSynced,
-		clientSecretLister:          clientSecretInformer.Lister(),
+		clientSecretLister:          clientSecretInformer.Lister().Secrets(tenantNamespace),
 		clientSecretListerSynced:    clientSecretInformer.Informer().HasSynced,
+
+		clusterId: clusterId,
 	}
 	configMapInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    ctrl.configMapAdd,
@@ -251,28 +257,29 @@ func (ctrl *CommonController) syncConfigMap() {
 		ctrl.configMapQueue.Forget(key)
 	}()
 	var configMap *v1.ConfigMap
-	deleteConfigMapInClient := false
+	delObjInClient := false
 	configMap, err = ctrl.masterConfigMapLister.ConfigMaps(namespace).Get(configMapName)
+	clientName := fmt.Sprintf("%s-%s", namespace, configMapName)
 	if err != nil {
 		if !apierrs.IsNotFound(err) {
 			return
 		}
-		_, err = ctrl.clientConfigMapLister.ConfigMaps(namespace).Get(configMapName)
+		_, err = ctrl.clientConfigMapLister.Get(clientName)
 		if err != nil {
 			if !apierrs.IsNotFound(err) {
-				klog.Errorf("Get configMap from master cluster failed, error: %v", err)
+				klog.Errorf("Get configMap from client cluster failed, error: %v", err)
 				return
 			}
 			err = nil
 			klog.V(3).Infof("ConfigMap %q deleted", configMapName)
 			return
 		}
-		deleteConfigMapInClient = true
+		delObjInClient = true
 
 	}
 
-	if deleteConfigMapInClient || configMap.DeletionTimestamp != nil {
-		if err = ctrl.client.CoreV1().ConfigMaps(namespace).Delete(ctx, configMapName,
+	if delObjInClient || configMap.DeletionTimestamp != nil {
+		if err = ctrl.client.CoreV1().ConfigMaps(ctrl.TenantNamespace()).Delete(ctx, clientName,
 			metav1.DeleteOptions{}); err != nil {
 			if !apierrs.IsNotFound(err) {
 				klog.Errorf("Delete configMap from client cluster failed, error: %v", err)
@@ -285,8 +292,8 @@ func (ctrl *CommonController) syncConfigMap() {
 	}
 
 	// data updated
-	var configmapInClient *v1.ConfigMap
-	configmapInClient, err = ctrl.clientConfigMapLister.ConfigMaps(namespace).Get(configMapName)
+	var objInClient *v1.ConfigMap
+	objInClient, err = ctrl.clientConfigMapLister.Get(clientName)
 	if err != nil {
 		if apierrs.IsNotFound(err) {
 			err = nil
@@ -295,12 +302,12 @@ func (ctrl *CommonController) syncConfigMap() {
 		klog.Errorf("Get configMap from client cluster failed, error: %v", err)
 		return
 	}
-	util.UpdateConfigMap(configmapInClient, configMap)
-	if IsObjectGlobal(&configmapInClient.ObjectMeta) {
+	util.UpdateConfigMap(objInClient, configMap)
+	if IsObjectGlobal(&objInClient.ObjectMeta) {
 		return
 	}
-	_, err = ctrl.client.CoreV1().ConfigMaps(configMap.Namespace).Update(ctx,
-		configmapInClient, metav1.UpdateOptions{})
+	_, err = ctrl.client.CoreV1().ConfigMaps(ctrl.TenantNamespace()).Update(ctx,
+		objInClient, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("Get configMap from client cluster failed, error: %v", err)
 		return
@@ -332,13 +339,14 @@ func (ctrl *CommonController) syncSecret() {
 	}()
 
 	var secret *v1.Secret
-	deleteSecretInClient := false
+	delObjInClient := false
 	secret, err = ctrl.masterSecretLister.Secrets(namespace).Get(secretName)
+	clientName := fmt.Sprintf("%s-%s", namespace, secretName)
 	if err != nil {
 		if !apierrs.IsNotFound(err) {
 			return
 		}
-		_, err = ctrl.clientSecretLister.Secrets(namespace).Get(secretName)
+		_, err = ctrl.clientSecretLister.Get(clientName)
 		if err != nil {
 			if !apierrs.IsNotFound(err) {
 				klog.Errorf("Get secret from master cluster failed, error: %v", err)
@@ -348,12 +356,12 @@ func (ctrl *CommonController) syncSecret() {
 			klog.V(3).Infof("Secret %q deleted", secretName)
 			return
 		}
-		deleteSecretInClient = true
+		delObjInClient = true
 
 	}
 
-	if deleteSecretInClient || secret.DeletionTimestamp != nil {
-		if err = ctrl.client.CoreV1().Secrets(namespace).Delete(ctx, secretName,
+	if delObjInClient || secret.DeletionTimestamp != nil {
+		if err = ctrl.client.CoreV1().Secrets(ctrl.TenantNamespace()).Delete(ctx, clientName,
 			metav1.DeleteOptions{}); err != nil {
 			if !apierrs.IsNotFound(err) {
 				klog.Errorf("Delete secret from client cluster failed, error: %v", err)
@@ -366,8 +374,8 @@ func (ctrl *CommonController) syncSecret() {
 	}
 
 	// data updated
-	var old *v1.Secret
-	old, err = ctrl.clientSecretLister.Secrets(namespace).Get(secretName)
+	var objInClient *v1.Secret
+	objInClient, err = ctrl.clientSecretLister.Get(clientName)
 	if err != nil {
 		if apierrs.IsNotFound(err) {
 			err = nil
@@ -376,11 +384,11 @@ func (ctrl *CommonController) syncSecret() {
 		klog.Errorf("Get secret from client cluster failed, error: %v", err)
 		return
 	}
-	util.UpdateSecret(old, secret)
-	if IsObjectGlobal(&old.ObjectMeta) {
+	util.UpdateSecret(objInClient, secret)
+	if IsObjectGlobal(&objInClient.ObjectMeta) {
 		return
 	}
-	_, err = ctrl.client.CoreV1().Secrets(secret.Namespace).Update(ctx, old, metav1.UpdateOptions{})
+	_, err = ctrl.client.CoreV1().Secrets(ctrl.TenantNamespace()).Update(ctx, objInClient, metav1.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("Get secret from client cluster failed, error: %v", err)
 		return
@@ -455,7 +463,7 @@ func (ctrl *CommonController) gcConfigMap(ctx context.Context) {
 		if !IsObjectGlobal(&configMap.ObjectMeta) {
 			continue
 		}
-		_, err = ctrl.masterConfigMapLister.ConfigMaps(configMap.Namespace).Get(configMap.Name)
+		_, err = ctrl.masterConfigMapLister.ConfigMaps(configMap.Annotations[util.UpstreamNamespace]).Get(configMap.Annotations[util.UpstreamResourceName])
 		if err != nil && apierrs.IsNotFound(err) {
 			err := ctrl.client.CoreV1().ConfigMaps(configMap.Namespace).Delete(ctx,
 				configMap.Name, metav1.DeleteOptions{})
@@ -480,7 +488,7 @@ func (ctrl *CommonController) gcSecret(ctx context.Context) {
 		if !IsObjectGlobal(&secret.ObjectMeta) {
 			continue
 		}
-		_, err = ctrl.masterSecretLister.Secrets(secret.Namespace).Get(secret.Name)
+		_, err = ctrl.masterSecretLister.Secrets(secret.Annotations[util.UpstreamNamespace]).Get(secret.Annotations[util.UpstreamResourceName])
 		if err != nil && apierrs.IsNotFound(err) {
 			err := ctrl.client.CoreV1().Secrets(secret.Namespace).Delete(ctx, secret.Name, metav1.DeleteOptions{})
 			if err != nil && !apierrs.IsNotFound(err) {
@@ -499,4 +507,8 @@ func (ctrl *CommonController) gc() {
 
 func (ctrl *CommonController) runGC(stopCh <-chan struct{}) {
 	wait.Until(ctrl.gc, 3*time.Minute, stopCh)
+}
+
+func (ctrl *CommonController) TenantNamespace() string {
+	return fmt.Sprintf("eki-burst-%s", ctrl.clusterId)
 }

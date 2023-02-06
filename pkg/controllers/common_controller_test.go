@@ -18,6 +18,8 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"github.com/virtual-kubelet/tensile-kube/pkg/util"
 	"reflect"
 	"testing"
 	"time"
@@ -74,7 +76,8 @@ func TestCommonController_RunUpdateConfigMap(t *testing.T) {
 				t.Fatal(err)
 			}
 			err := wait.Poll(10*time.Millisecond, 10*time.Second, func() (bool, error) {
-				cm, err := b.c.clientConfigMapLister.ConfigMaps(c.configMap.Namespace).Get(configMap.Name)
+				clientObjName := fmt.Sprintf("%s-%s", c.configMap.Namespace, c.configMap.Name)
+				cm, err := b.c.clientConfigMapLister.Get(clientObjName)
 				if err != nil {
 					return false, nil
 				}
@@ -129,7 +132,8 @@ func TestCommonController_RunUpdateSecret(t *testing.T) {
 				t.Fatal(err)
 			}
 			err := wait.Poll(10*time.Millisecond, 10*time.Second, func() (bool, error) {
-				newSvc, err := b.c.clientSecretLister.Secrets(c.secret.Namespace).Get(c.secret.Name)
+				clientObjName := fmt.Sprintf("%s-%s", c.secret.Namespace, c.secret.Name)
+				newSvc, err := b.c.clientSecretLister.Get(clientObjName)
 				if err != nil {
 					return false, nil
 				}
@@ -185,7 +189,7 @@ func TestCommonController_RunDeleteConfigMap(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = b.c.clientConfigMapLister.ConfigMaps(c.configMap.Namespace).Get(c.configMap.Name)
+			_, err = b.c.clientConfigMapLister.Get(c.configMap.Name)
 			if err != nil {
 				if !errors.IsNotFound(err) {
 					t.Fatal(err)
@@ -235,7 +239,7 @@ func TestCommonController_RunDeleteSecret(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = b.c.clientSecretLister.Secrets(c.secret.Namespace).Get(c.secret.Name)
+			_, err = b.c.clientSecretLister.Get(c.secret.Name)
 			if err != nil {
 				if !errors.IsNotFound(err) {
 					t.Fatal(err)
@@ -252,15 +256,19 @@ func TestCommonController_RunDeleteSecret(t *testing.T) {
 }
 
 func newCommonController() *commonTestBase {
-	client := fake.NewSimpleClientset(newConfigMap(), newSecret())
-	master := fake.NewSimpleClientset(newConfigMap(), newSecret())
+	master := fake.NewSimpleClientset(newSecret(), newConfigMap())
+	clientSecret := newSecret()
+	clientConfigMap := newConfigMap()
+	encodeObj(&clientSecret.ObjectMeta)
+	encodeObj(&clientConfigMap.ObjectMeta)
+	client := fake.NewSimpleClientset(clientConfigMap, clientSecret)
 
 	clientInformer := informers.NewSharedInformerFactory(client, controller.NoResyncPeriodFunc())
 	masterInformer := informers.NewSharedInformerFactory(master, controller.NoResyncPeriodFunc())
 
 	configMapRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
 	secretRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
-	controller := NewCommonController(client, masterInformer, clientInformer, configMapRateLimiter, secretRateLimiter)
+	controller := NewCommonController(client, masterInformer, clientInformer, configMapRateLimiter, secretRateLimiter, "default")
 	c := controller.(*CommonController)
 	return &commonTestBase{
 		c:              c,
@@ -303,7 +311,7 @@ func newConfigMap() *v1.ConfigMap {
 func newSecret() *v1.Secret {
 	return &v1.Secret{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
+			Kind:       "Secret",
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -311,5 +319,12 @@ func newSecret() *v1.Secret {
 			Namespace:   "default",
 			Annotations: map[string]string{"global": "true"},
 		},
+		StringData: map[string]string{"test": "test"},
 	}
+}
+
+func encodeObj(meta *metav1.ObjectMeta) {
+	meta.Name = fmt.Sprintf("%s-%s", meta.Namespace, meta.Name)
+	meta.Namespace = fmt.Sprintf("eki-burst-%s", "default")
+	meta.Annotations = map[string]string{util.UpstreamNamespace: "default", util.UpstreamResourceName: "test", "global": "true"}
 }

@@ -247,7 +247,7 @@ func (ctrl *CommonController) syncConfigMap() {
 		ctrl.configMapQueue.Forget(key)
 		return
 	}
-	klog.V(4).Infof("Started configMap processing %q", configMapName)
+	klog.V(4).Infof("Started configMap processing %q", key)
 
 	defer func() {
 		if err != nil {
@@ -328,7 +328,7 @@ func (ctrl *CommonController) syncSecret() {
 		ctrl.secretQueue.Forget(key)
 		return
 	}
-	klog.V(4).Infof("Started secret processing %q", secretName)
+	klog.V(4).Infof("Started secret processing %q", key)
 
 	defer func() {
 		if err != nil {
@@ -349,7 +349,7 @@ func (ctrl *CommonController) syncSecret() {
 		_, err = ctrl.clientSecretLister.Get(clientName)
 		if err != nil {
 			if !apierrs.IsNotFound(err) {
-				klog.Errorf("Get secret from master cluster failed, error: %v", err)
+				klog.Errorf("Get secret from client cluster failed, error: %v", err)
 				return
 			}
 			err = nil
@@ -463,6 +463,7 @@ func (ctrl *CommonController) gcConfigMap(ctx context.Context) {
 		if !IsObjectGlobal(&configMap.ObjectMeta) {
 			continue
 		}
+
 		_, err = ctrl.masterConfigMapLister.ConfigMaps(configMap.Annotations[util.UpstreamNamespace]).Get(configMap.Annotations[util.UpstreamResourceName])
 		if err != nil && apierrs.IsNotFound(err) {
 			err := ctrl.client.CoreV1().ConfigMaps(configMap.Namespace).Delete(ctx,
@@ -470,6 +471,7 @@ func (ctrl *CommonController) gcConfigMap(ctx context.Context) {
 			if err != nil && !apierrs.IsNotFound(err) {
 				klog.Error(err)
 			}
+			klog.V(4).Infof("Delete configmap %s/%s by gc.", configMap.Namespace, configMap.Name)
 			continue
 		}
 	}
@@ -494,6 +496,7 @@ func (ctrl *CommonController) gcSecret(ctx context.Context) {
 			if err != nil && !apierrs.IsNotFound(err) {
 				klog.Error(err)
 			}
+			klog.V(4).Infof("Delete secret %s/%s by gc.", secret.Namespace, secret.Name)
 			continue
 		}
 	}

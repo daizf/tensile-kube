@@ -745,13 +745,14 @@ func (ctrl *PVController) gc() {
 		if !IsObjectGlobal(&pvc.ObjectMeta) {
 			continue
 		}
-		_, err = ctrl.masterPVCLister.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name)
+		_, err = ctrl.masterPVCLister.PersistentVolumeClaims(pvc.Annotations[util.UpstreamNamespace]).Get(pvc.Annotations[util.UpstreamResourceName])
 		if err != nil && apierrs.IsNotFound(err) {
 			err := ctrl.client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Delete(ctx,
 				pvc.Name, metav1.DeleteOptions{})
 			if err != nil && !apierrs.IsNotFound(err) {
 				klog.Error(err)
 			}
+			klog.V(4).Infof("Delete pvc %s/%s by gc.", pvc.Namespace, pvc.Name)
 			continue
 		}
 	}

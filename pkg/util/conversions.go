@@ -239,6 +239,9 @@ func ConvertObjectName(meta *metav1.ObjectMeta) {
 
 // SetUpstreamAnnotations 追加原始ns name信息
 func SetUpstreamAnnotations(obj *metav1.ObjectMeta, clusterId string) {
+	if obj.Annotations == nil {
+		obj.Annotations = map[string]string{}
+	}
 	obj.Annotations[UpstreamNamespace] = obj.Namespace
 	obj.Annotations[UpstreamResourceName] = obj.Name
 	obj.Annotations[UpstreamClusterId] = clusterId

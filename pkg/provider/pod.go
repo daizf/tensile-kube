@@ -384,6 +384,7 @@ func (v *VirtualK8S) createSecrets(ctx context.Context, secrets []string, ns str
 			}
 		}
 		controllers.SetObjectGlobal(&secret.ObjectMeta)
+		util.SetUpstreamAnnotations(&secret.ObjectMeta, v.clusterId)
 		_, err = v.client.CoreV1().Secrets(v.TenantNamespace()).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil {
 			if errors.IsAlreadyExists(err) {
@@ -468,6 +469,7 @@ func (v *VirtualK8S) createConfigMaps(ctx context.Context, configmaps []string, 
 			}
 			util.TrimObjectMeta(&configMap.ObjectMeta)
 			controllers.SetObjectGlobal(&configMap.ObjectMeta)
+			util.SetUpstreamAnnotations(&configMap.ObjectMeta, v.clusterId)
 			util.ConvertObjectName(&configMap.ObjectMeta)
 			_, err = v.client.CoreV1().ConfigMaps(v.TenantNamespace()).Create(ctx, configMap, metav1.CreateOptions{})
 			if err != nil {

@@ -498,13 +498,14 @@ func (ctrl *ServiceController) gc() {
 		if !IsObjectGlobal(&service.ObjectMeta) {
 			continue
 		}
-		_, err = ctrl.serviceLister.Services(service.Namespace).Get(service.Name)
+		_, err = ctrl.serviceLister.Services(service.Annotations[util.UpstreamNamespace]).Get(service.Annotations[util.UpstreamResourceName])
 		if err != nil && apierrs.IsNotFound(err) {
 			err := ctrl.client.CoreV1().Services(service.Namespace).Delete(ctx,
 				service.Name, metav1.DeleteOptions{})
 			if err != nil && !apierrs.IsNotFound(err) {
 				klog.Error(err)
 			}
+			klog.V(4).Infof("Delete service %s/%s by gc.", service.Namespace, service.Name)
 			continue
 		}
 	}

@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/controller"
 )
 
@@ -266,9 +265,7 @@ func newCommonController() *commonTestBase {
 	clientInformer := informers.NewSharedInformerFactory(client, controller.NoResyncPeriodFunc())
 	masterInformer := informers.NewSharedInformerFactory(master, controller.NoResyncPeriodFunc())
 
-	configMapRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
-	secretRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
-	controller := NewCommonController(client, masterInformer, clientInformer, configMapRateLimiter, secretRateLimiter, "default")
+	controller := NewCommonController(client, masterInformer, clientInformer, "default")
 	c := controller.(*CommonController)
 	return &commonTestBase{
 		c:              c,

@@ -33,7 +33,6 @@ import (
 	logruslogger "github.com/virtual-kubelet/virtual-kubelet/log/logrus"
 	"golang.org/x/time/rate"
 	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
 
@@ -65,7 +64,7 @@ func main() {
 		fmt.Sprintf("ignore-labels are the labels we would like to ignore when build pod for client clusters, "+
 			"usually these labels will infulence schedule, default %v, multi labels should be seperated by comma(,"+
 			")", util.BatchPodLabel))
-	flags.StringVar(&enableControllers, "enable-controllers", "PVControllers,ServiceControllers",
+	flags.StringVar(&enableControllers, "enable-controllers", "EventControllers,PVControllers,ServiceControllers",
 		"support PVControllers,ServiceControllers, default, all of these")
 
 	flags.BoolVar(&enableServiceAccount, "enable-serviceaccount", true,
@@ -129,7 +128,7 @@ func RunController(ctx context.Context, p *k8sprovider.VirtualK8S, hostIP string
 		return nil
 	}
 
-	runningControllers := []controllers.Controller{buildCommonControllers(client, masterInformer, clientInformer)}
+	runningControllers := []controllers.Controller{controllers.NewCommonController(client, masterInformer, clientInformer, clusterId)}
 
 	controllerSlice := strings.Split(enableControllers, ",")
 	for _, c := range controllerSlice {
@@ -137,6 +136,9 @@ func RunController(ctx context.Context, p *k8sprovider.VirtualK8S, hostIP string
 			continue
 		}
 		switch c {
+		case "EventControllers":
+			eventCtrl := controllers.NewEventController(master, client, masterInformer, clientInformer, clusterId)
+			runningControllers = append(runningControllers, eventCtrl)
 		case "PVControllers":
 			pvCtrl := controllers.NewPVController(master, client, masterInformer, clientInformer, hostIP, p.GetClusterId())
 			runningControllers = append(runningControllers, pvCtrl)
@@ -154,15 +156,6 @@ func RunController(ctx context.Context, p *k8sprovider.VirtualK8S, hostIP string
 	}
 	<-ctx.Done()
 	return nil
-}
-
-func buildCommonControllers(client kubernetes.Interface, masterInformer,
-	clientInformer kubeinformers.SharedInformerFactory) controllers.Controller {
-
-	configMapRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
-	secretRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
-
-	return controllers.NewCommonController(client, masterInformer, clientInformer, configMapRateLimiter, secretRateLimiter, clusterId)
 }
 
 func rateLimiter() workqueue.RateLimiter {

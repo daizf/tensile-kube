@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	_ "reflect"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -43,9 +44,9 @@ import (
 
 // CommonController is a controller sync configMaps and secrets from master cluster to client cluster
 type CommonController struct {
-	client        kubernetes.Interface
-	eventRecorder record.EventRecorder
-
+	client         kubernetes.Interface
+	eventRecorder  record.EventRecorder
+	eventSink      record.EventSink
 	configMapQueue workqueue.RateLimitingInterface
 	secretQueue    workqueue.RateLimitingInterface
 
@@ -58,13 +59,13 @@ type CommonController struct {
 	clientConfigMapListerSynced cache.InformerSynced
 	clientSecretLister          corelisters.SecretNamespaceLister
 	clientSecretListerSynced    cache.InformerSynced
-	clusterId                   string
+
+	clusterId string
 }
 
 // NewCommonController returns a new *CommonController
 func NewCommonController(client kubernetes.Interface,
 	masterInformer, clientInformer informers.SharedInformerFactory,
-	configMapRateLimiter, secretRateLimiter workqueue.RateLimiter,
 	clusterId string) Controller {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.CoreV1().Events(v1.NamespaceAll)})
@@ -75,6 +76,10 @@ func NewCommonController(client kubernetes.Interface,
 	secretInformer := masterInformer.Core().V1().Secrets()
 	clientConfigMapInformer := clientInformer.Core().V1().ConfigMaps()
 	clientSecretInformer := clientInformer.Core().V1().Secrets()
+
+	configMapRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
+	secretRateLimiter := workqueue.NewItemExponentialFailureRateLimiter(time.Second, 30*time.Second)
+
 	tenantNamespace := fmt.Sprintf("eki-burst-%s", clusterId)
 	ctrl := &CommonController{
 		client:        client,

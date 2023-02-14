@@ -3,21 +3,20 @@ module github.com/virtual-kubelet/tensile-kube
 go 1.13
 
 require (
-	github.com/evanphx/json-patch v4.9.0+incompatible
+	github.com/evanphx/json-patch v4.12.0+incompatible
 	github.com/mattbaird/jsonpatch v0.0.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/cobra v0.0.7
+	github.com/sirupsen/logrus v1.9.0
+	github.com/spf13/cobra v1.5.0
 	github.com/spf13/pflag v1.0.5
-	github.com/virtual-kubelet/node-cli v0.5.2-0.20210302175044-b3a8c550471d
+	github.com/virtual-kubelet/node-cli v0.6.0
 	github.com/virtual-kubelet/virtual-kubelet v1.7.0
-	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
+	golang.org/x/time v0.0.0-20220609170525-579cf78fd858
 	k8s.io/api v0.25.0
 	k8s.io/apimachinery v0.25.0
 	k8s.io/client-go v10.0.0+incompatible
 	k8s.io/component-base v0.25.0
 	k8s.io/klog v1.0.0
-	k8s.io/kube-openapi v0.0.0-20200410163147-594e756bea31 // indirect
 	k8s.io/kubernetes v1.25.0
 	k8s.io/metrics v0.25.0
 	sigs.k8s.io/descheduler v0.25.0
@@ -45,7 +44,7 @@ replace (
 	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.25.0
 	k8s.io/kubectl => k8s.io/kubectl v0.25.0
 	k8s.io/kubelet => k8s.io/kubelet v0.25.0
-	k8s.io/kubernetes => k8s.io/kubernetes v1.18.4
+	k8s.io/kubernetes => k8s.io/kubernetes v1.25.0
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.25.0
 	k8s.io/metrics => k8s.io/metrics v0.25.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.25.0

@@ -20,11 +20,11 @@ import (
 	"context"
 	"time"
 
+	stats "github.com/virtual-kubelet/virtual-kubelet/node/api/statsv1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	stats "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	"github.com/virtual-kubelet/tensile-kube/pkg/util"

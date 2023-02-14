@@ -33,7 +33,7 @@ import (
 
 // PodLifeTime evicts pods on nodes that were created more than strategy.Params.MaxPodLifeTimeSeconds seconds ago.
 func PodLifeTime(ctx context.Context, client clientset.Interface, strategy api.DeschedulerStrategy, nodes []*v1.Node, evictLocalStoragePods bool, podEvictor *evictions.PodEvictor) {
-	if strategy.Params.MaxPodLifeTimeSeconds == nil {
+	if strategy.Params.PodLifeTime.MaxPodLifeTimeSeconds == nil {
 		klog.V(1).Infof("MaxPodLifeTimeSeconds not set")
 		return
 	}
@@ -43,12 +43,12 @@ func PodLifeTime(ctx context.Context, client clientset.Interface, strategy api.D
 			wg.Add(1)
 			defer wg.Done()
 			klog.V(1).Infof("Processing node: %#v", node.Name)
-			pods := listOldPodsOnNode(client, node, *strategy.Params.MaxPodLifeTimeSeconds, evictLocalStoragePods)
+			pods := listOldPodsOnNode(client, node, *strategy.Params.PodLifeTime.MaxPodLifeTimeSeconds, evictLocalStoragePods)
 
 			f := func(idx int) {
 				success, err := podEvictor.EvictPod(ctx, pods[idx], node)
 				if success {
-					klog.V(1).Infof("Evicted pod: %#v because it was created more than %v seconds ago", pods[idx].Name, *strategy.Params.MaxPodLifeTimeSeconds)
+					klog.V(1).Infof("Evicted pod: %#v because it was created more than %v seconds ago", pods[idx].Name, *strategy.Params.PodLifeTime.MaxPodLifeTimeSeconds)
 				}
 
 				if err != nil {
@@ -63,12 +63,12 @@ func PodLifeTime(ctx context.Context, client clientset.Interface, strategy api.D
 	wg.Wait()
 	if podEvictor.CheckUnschedulablePods {
 		klog.V(1).Info("Processing unschedulabe pods")
-		pods := listOldPodsOnNode(client, &v1.Node{}, (*strategy.Params.MaxPodLifeTimeSeconds)*3,
+		pods := listOldPodsOnNode(client, &v1.Node{}, (*strategy.Params.PodLifeTime.MaxPodLifeTimeSeconds)*3,
 			evictLocalStoragePods)
 		f := func(idx int) {
 			success, err := podEvictor.EvictPod(ctx, pods[idx], &v1.Node{})
 			if success {
-				klog.V(1).Infof("Evicted pod: %#v because it was created more than %v seconds ago", pods[idx].Name, *strategy.Params.MaxPodLifeTimeSeconds)
+				klog.V(1).Infof("Evicted pod: %#v because it was created more than %v seconds ago", pods[idx].Name, *strategy.Params.PodLifeTime.MaxPodLifeTimeSeconds)
 			}
 
 			if err != nil {
